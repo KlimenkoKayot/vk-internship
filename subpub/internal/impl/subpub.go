@@ -24,6 +24,9 @@ func (e *SubPub) Subscribe(subject string, callback domain.MessageHandler) (doma
 	defer e.mu.Unlock()
 	uid := e.uuidGenerator.NewString()
 	subscription := newSubscription(uid, subject, callback, e)
+	if e.topicSubscribes[subject] == nil {
+		e.topicSubscribes[subject] = make(map[string]*Subscription, 1024)
+	}
 	e.topicSubscribes[subject][uid] = subscription
 	return subscription, nil
 }
@@ -52,6 +55,10 @@ func (e *SubPub) Close(ctx context.Context) error {
 	return nil
 }
 
-func NewSubPub() domain.SubPub {
-	return &SubPub{}
+func NewSubPub(uuidGenerator domain.UUIDGenerator) domain.SubPub {
+	return &SubPub{
+		topicSubscribes: make(map[string]map[string]*Subscription, 1024),
+		uuidGenerator:   uuidGenerator,
+		mu:              sync.RWMutex{},
+	}
 }
