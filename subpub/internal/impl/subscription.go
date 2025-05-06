@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	timeProcessDelay time.Duration = 10 * time.Millisecond
-	processingSize   uint          = 16
-	bufferSize       uint          = 32
+	idleDelay      time.Duration = 10 * time.Millisecond
+	processingSize uint          = 16
+	bufferSize     uint          = 32
 )
 
 type Subscription struct {
@@ -64,7 +64,7 @@ func (es *Subscription) process() {
 		default:
 		}
 		// Защита от busy-wait
-		time.Sleep(timeProcessDelay)
+		time.Sleep(idleDelay)
 	}
 }
 
@@ -80,12 +80,12 @@ func (es *Subscription) send(msg interface{}) error {
 		return nil
 	default:
 		// переполнение буффера
-		es.channelTransfusion(msg)
+		es.expandBuffer(msg)
 		return nil
 	}
 }
 
-func (es *Subscription) channelTransfusion(msg interface{}) {
+func (es *Subscription) expandBuffer(msg interface{}) {
 	es.mu.Lock()
 	defer es.mu.Unlock()
 	newBuffer := make(chan interface{}, len(es.buffer)*2)
