@@ -1,5 +1,5 @@
 package domain
 
-type IDGenerator interface {
+type UUIDGenerator interface {
 	NewString() string
 }

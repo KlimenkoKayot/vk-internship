@@ -1,4 +1,4 @@
-module github.com/klimenkokayot/vk-internship
+module github.com/klimenkokayot/vk-internship/subpub
 
 go 1.23.8
 
