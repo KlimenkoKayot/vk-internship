@@ -3,8 +3,15 @@ package impl
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/klimenkokayot/vk-internship/subpub/domain"
+)
+
+const (
+	timeProcessDelay time.Duration = 10 * time.Millisecond
+	processingSize   uint          = 16
+	bufferSize       uint          = 32
 )
 
 type Subscription struct {
@@ -35,19 +42,29 @@ func (es *Subscription) process() {
 	defer es.wg.Done()
 	// Сначала обрабатываем первостепенные задачи из processing
 	// Если их нет, то стараемся перелить задачи из buffer в processing
-	for {
+	for !es.closed {
+		// 1. Обработка
 		select {
 		case msg, ok := <-es.processing:
 			if !ok {
 				return
 			}
 			es.callback(msg)
+			continue
+		default:
+		}
+		// 2. Пополнение processing
+		select {
 		case msg, ok := <-es.buffer:
 			if !ok {
 				return
 			}
 			es.processing <- msg
+			continue
+		default:
 		}
+		// Защита от busy-wait
+		time.Sleep(timeProcessDelay)
 	}
 }
 
@@ -90,8 +107,8 @@ func newSubscription(id, topic string, callback domain.MessageHandler, bus *SubP
 		id:         id,
 		topic:      topic,
 		callback:   callback,
-		processing: make(chan interface{}, 16),
-		buffer:     make(chan interface{}, 1024),
+		processing: make(chan interface{}, processingSize),
+		buffer:     make(chan interface{}, bufferSize),
 		closed:     false,
 		mu:         sync.Mutex{},
 		once:       sync.Once{},
