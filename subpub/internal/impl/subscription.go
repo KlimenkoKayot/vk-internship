@@ -42,6 +42,11 @@ func (es *Subscription) Unsubscribe() {
 		es.mu.Unlock()
 		es.logger.Debug("Флаг closed установлен")
 
+		// Закрытие каналов
+		close(es.processing)
+		close(es.buffer)
+		es.logger.Debug("Каналы processing и buffer закрыты")
+
 		// Обработка оставшихся сообщений
 		es.logger.Debug("Обработка оставшихся сообщений")
 		processedCount := 0
@@ -60,11 +65,6 @@ func (es *Subscription) Unsubscribe() {
 		// Удаление подписки
 		es.bus.removeSubscription(es.topic, es.id)
 		es.logger.Debug("Подписка удалена из bus")
-
-		// Закрытие каналов
-		close(es.processing)
-		close(es.buffer)
-		es.logger.Debug("Каналы processing и buffer закрыты")
 
 		// Ожидание завершения обработки
 		es.wg.Wait()
