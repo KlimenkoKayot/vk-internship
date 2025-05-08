@@ -131,6 +131,7 @@ func (e *SubPub) Close(ctx context.Context) error {
 			e.logger.Debug(fmt.Sprintf("Подписчик %s отписан", sub.id))
 		}
 		e.logger.OK("SubPub успешно закрыт")
+		return
 	})
 
 	e.logger.Warn("Попытка повторного закрытия.")

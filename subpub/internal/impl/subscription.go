@@ -69,7 +69,10 @@ func (es *Subscription) Unsubscribe() {
 		// Ожидание завершения обработки
 		es.wg.Wait()
 		es.logger.OK("Отписка завершена успешно")
+		return
 	})
+	es.logger.Warn("Попытка повторной отписки.")
+	return
 }
 
 func (es *Subscription) process() {
