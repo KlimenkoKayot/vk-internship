@@ -29,84 +29,124 @@ type SubPub struct {
 func (e *SubPub) removeSubscription(topic, id string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	e.logger.Debug(fmt.Sprintf("Удаление подписки %s из темы %s", id, topic))
+
 	if subs, ok := e.topicSubscribes[topic]; ok {
 		delete(subs, id)
-		if len(topic) == 0 {
+		if len(subs) == 0 {
 			delete(e.topicSubscribes, topic)
+			e.logger.Debug(fmt.Sprintf("Тема %s удалена, так как больше не содержит подписок", topic))
 		}
+	} else {
+		e.logger.Warn(fmt.Sprintf("Попытка удаления подписки из несуществующей темы %s", topic))
 	}
 }
 
 func (e *SubPub) Subscribe(subject string, callback domain.MessageHandler) (subscription domain.Subscription, err error) {
 	e.mu.Lock()
-	e.logger.Info("Новая подписка на " + subject + ".")
-	if e.closed {
-		e.logger.Warn("Не удалось подписаться, closed.")
-		return nil, ErrSubPubClosed
-	}
 	defer func() {
-		if err := recover(); err != nil {
-			e.logger.Warn("Error recover in SubPub.Subscribe")
+		if r := recover(); r != nil {
+			e.logger.Error(fmt.Sprintf("PANIC в Subscribe: %v", r))
 			err = ErrPanicRecover
 		}
 		e.mu.Unlock()
 	}()
+
+	e.logger.Info(fmt.Sprintf("Попытка подписки на тему %s", subject))
+
+	if e.closed {
+		e.logger.Warn("Отказ в подписке: сервис закрыт")
+		return nil, ErrSubPubClosed
+	}
+
 	uid := e.uuidGenerator.NewString()
-	loggerSub := e.logger.WithLayer("[SUB]")
+	loggerSub := e.logger.WithLayer(fmt.Sprintf("SUB-%s", uid[:8]))
+
 	sub := newSubscription(uid, subject, callback, e, loggerSub)
+
 	if e.topicSubscribes[subject] == nil {
 		e.topicSubscribes[subject] = make(map[string]*Subscription, 1024)
+		e.logger.Debug(fmt.Sprintf("Создана новая тема %s", subject))
 	}
+
 	e.topicSubscribes[subject][uid] = sub
-	e.logger.OK("Подписка выполнена успешно.")
+	e.logger.Info(fmt.Sprintf("Успешная подписка %s на тему %s", uid[:8], subject))
+
 	return sub, nil
 }
 
 func (e *SubPub) Publish(subject string, msg interface{}) error {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
+
+	e.logger.Debug(fmt.Sprintf("Публикация сообщения в тему %s", subject))
+
 	if e.closed {
+		e.logger.Warn("Отказ в публикации: сервис закрыт")
 		return ErrSubPubClosed
 	}
-	if _, ok := e.topicSubscribes[subject]; ok {
+
+	subs, ok := e.topicSubscribes[subject]
+	if !ok {
+		e.logger.Warn(fmt.Sprintf("Попытка публикации в несуществующую тему %s", subject))
 		return ErrTopicNotExist
 	}
-	for _, subscriber := range e.topicSubscribes[subject] {
-		subscriber.send(msg) // резона ошибку фиксить нет, все равно скоро удалится из map в removeSubscriber()
+
+	if len(subs) == 0 {
+		e.logger.Debug(fmt.Sprintf("Тема %s существует, но не имеет подписчиков", subject))
 	}
+
+	for id, subscriber := range subs {
+		e.logger.Debug(fmt.Sprintf("Отправка сообщения подписчику %s темы %s", id[:8], subject))
+		if err := subscriber.send(msg); err != nil {
+			e.logger.Error(fmt.Sprintf("Ошибка отправки сообщения подписчику %s: %v", id[:8], err))
+		}
+	}
+
+	e.logger.Info(fmt.Sprintf("Сообщение успешно опубликовано в тему %s (%d подписчиков)", subject, len(subs)))
 	return nil
 }
 
 func (e *SubPub) Close(ctx context.Context) error {
+	e.logger.Info("Запуск процедуры закрытия SubPub")
+
 	e.once.Do(func() {
 		e.mu.Lock()
-		// Меняем флаг
 		e.closed = true
-		// Копируем все подписки
+
 		subscribers := make([]*Subscription, 0)
-		for _, topic := range e.topicSubscribes {
-			for _, sub := range topic {
+		for topic, subs := range e.topicSubscribes {
+			e.logger.Debug(fmt.Sprintf("Обработка темы %s (%d подписчиков)", topic, len(subs)))
+			for id, sub := range subs {
 				subscribers = append(subscribers, sub)
+				e.logger.Debug(fmt.Sprintf("Добавлена подписка %s для отписки", id[:8]))
 			}
 		}
 		e.mu.Unlock()
+
+		e.logger.Info(fmt.Sprintf("Начинаю отписку %d подписчиков", len(subscribers)))
 		for _, sub := range subscribers {
 			sub.Unsubscribe()
 		}
 	})
+
+	e.logger.Info("SubPub успешно закрыт")
 	return nil
 }
 
 func NewSubPub(uuidGenerator domain.UUIDGenerator, logger logger.Logger) domain.SubPub {
+	logger.Info("Инициализация нового SubPub")
+
 	subPub := &SubPub{
 		topicSubscribes: make(map[string]map[string]*Subscription, 1024),
-
-		uuidGenerator: uuidGenerator,
-		logger:        logger,
-
-		closed: false,
-		once:   sync.Once{},
-		mu:     sync.RWMutex{},
+		uuidGenerator:   uuidGenerator,
+		logger:          logger,
+		closed:          false,
+		once:            sync.Once{},
+		mu:              sync.RWMutex{},
 	}
+
+	logger.Info("SubPub успешно инициализирован")
 	return subPub
 }
