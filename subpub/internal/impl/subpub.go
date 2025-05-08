@@ -39,21 +39,26 @@ func (e *SubPub) removeSubscription(topic, id string) {
 
 func (e *SubPub) Subscribe(subject string, callback domain.MessageHandler) (subscription domain.Subscription, err error) {
 	e.mu.Lock()
+	e.logger.Info("Новая подписка на " + subject + ".")
 	if e.closed {
+		e.logger.Warn("Не удалось подписаться, closed.")
 		return nil, ErrSubPubClosed
 	}
 	defer func() {
+		e.logger.Warn("Error recover in SubPub.Subscribe")
 		if err := recover(); err != nil {
 			err = ErrPanicRecover
 		}
 		e.mu.Unlock()
 	}()
 	uid := e.uuidGenerator.NewString()
-	sub := newSubscription(uid, subject, callback, e)
+	loggerSub := e.logger.WithLayer("[SUB]")
+	sub := newSubscription(uid, subject, callback, e, loggerSub)
 	if e.topicSubscribes[subject] == nil {
 		e.topicSubscribes[subject] = make(map[string]*Subscription, 1024)
 	}
 	e.topicSubscribes[subject][uid] = sub
+	e.logger.OK("Подписка выполнена успешно.")
 	return sub, nil
 }
 

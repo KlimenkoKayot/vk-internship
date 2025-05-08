@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klimenkokayot/vk-internship/libs/logger"
 	"github.com/klimenkokayot/vk-internship/subpub/domain"
 )
 
@@ -21,6 +22,8 @@ type Subscription struct {
 
 	processing chan interface{}
 	buffer     chan interface{}
+
+	logger logger.Logger
 
 	closed bool
 	wg     sync.WaitGroup
@@ -116,17 +119,21 @@ func (es *Subscription) expandBuffer(msg interface{}) {
 	}
 }
 
-func newSubscription(id, topic string, callback domain.MessageHandler, bus *SubPub) *Subscription {
+func newSubscription(id, topic string, callback domain.MessageHandler, bus *SubPub, logger logger.Logger) *Subscription {
 	sub := &Subscription{
-		id:         id,
-		topic:      topic,
-		callback:   callback,
+		id:       id,
+		topic:    topic,
+		callback: callback,
+
 		processing: make(chan interface{}, processingSize),
 		buffer:     make(chan interface{}, bufferSize),
-		closed:     false,
-		mu:         sync.Mutex{},
-		once:       sync.Once{},
-		bus:        bus,
+
+		logger: logger,
+
+		closed: false,
+		mu:     sync.Mutex{},
+		once:   sync.Once{},
+		bus:    bus,
 	}
 	sub.wg.Add(1)
 	go sub.process()
