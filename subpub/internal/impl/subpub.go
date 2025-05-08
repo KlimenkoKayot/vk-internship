@@ -61,7 +61,7 @@ func (e *SubPub) Subscribe(subject string, callback domain.MessageHandler) (subs
 	}
 
 	uid := e.uuidGenerator.NewString()
-	loggerSub := e.logger.WithLayer(fmt.Sprintf("SUB-%s", uid[:8]))
+	loggerSub := e.logger.WithLayer(fmt.Sprintf("SUB-%s", uid))
 
 	sub := newSubscription(uid, subject, callback, e, loggerSub)
 
@@ -71,7 +71,7 @@ func (e *SubPub) Subscribe(subject string, callback domain.MessageHandler) (subs
 	}
 
 	e.topicSubscribes[subject][uid] = sub
-	e.logger.Info(fmt.Sprintf("Успешная подписка %s на тему %s", uid[:8], subject))
+	e.logger.OK(fmt.Sprintf("Успешная подписка %s на тему %s", uid, subject))
 
 	return sub, nil
 }
@@ -98,13 +98,13 @@ func (e *SubPub) Publish(subject string, msg interface{}) error {
 	}
 
 	for id, subscriber := range subs {
-		e.logger.Debug(fmt.Sprintf("Отправка сообщения подписчику %s темы %s", id[:8], subject))
+		e.logger.Debug(fmt.Sprintf("Отправка сообщения подписчику %s темы %s", id, subject))
 		if err := subscriber.send(msg); err != nil {
-			e.logger.Error(fmt.Sprintf("Ошибка отправки сообщения подписчику %s: %v", id[:8], err))
+			e.logger.Warn(fmt.Sprintf("Ошибка отправки сообщения подписчику %s: %v", id, err))
 		}
 	}
 
-	e.logger.Info(fmt.Sprintf("Сообщение успешно опубликовано в тему %s (%d подписчиков)", subject, len(subs)))
+	e.logger.OK(fmt.Sprintf("Сообщение успешно опубликовано в тему %s (%d подписчиков)", subject, len(subs)))
 	return nil
 }
 
@@ -120,18 +120,20 @@ func (e *SubPub) Close(ctx context.Context) error {
 			e.logger.Debug(fmt.Sprintf("Обработка темы %s (%d подписчиков)", topic, len(subs)))
 			for id, sub := range subs {
 				subscribers = append(subscribers, sub)
-				e.logger.Debug(fmt.Sprintf("Добавлена подписка %s для отписки", id[:8]))
+				e.logger.Debug(fmt.Sprintf("Добавлена подписка %s для отписки", id))
 			}
 		}
 		e.mu.Unlock()
 
-		e.logger.Info(fmt.Sprintf("Начинаю отписку %d подписчиков", len(subscribers)))
+		e.logger.Info(fmt.Sprintf("Начата отписка %d подписчиков", len(subscribers)))
 		for _, sub := range subscribers {
 			sub.Unsubscribe()
+			e.logger.Debug(fmt.Sprintf("Подписчик %s отписан", sub.id))
 		}
+		e.logger.OK("SubPub успешно закрыт")
 	})
 
-	e.logger.Info("SubPub успешно закрыт")
+	e.logger.Warn("Попытка повторного закрытия.")
 	return nil
 }
 
@@ -147,6 +149,6 @@ func NewSubPub(uuidGenerator domain.UUIDGenerator, logger logger.Logger) domain.
 		mu:              sync.RWMutex{},
 	}
 
-	logger.Info("SubPub успешно инициализирован")
+	logger.OK("SubPub успешно инициализирован")
 	return subPub
 }
