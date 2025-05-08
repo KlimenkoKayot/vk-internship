@@ -1,4 +1,4 @@
-package impl
+package core
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/klimenkokayot/vk-internship/libs/logger"
 	"github.com/klimenkokayot/vk-internship/subpub/domain"
+	"github.com/klimenkokayot/vk-internship/subpub/internal/infrastructure/uuid"
 )
 
 var (
@@ -18,7 +19,7 @@ var (
 type SubPub struct {
 	topicSubscribes map[string]map[string]*Subscription
 
-	uuidGenerator domain.UUIDGenerator
+	uuidGenerator uuid.UUIDGenerator
 	logger        logger.Logger
 
 	closed bool
@@ -138,7 +139,7 @@ func (e *SubPub) Close(ctx context.Context) error {
 	return nil
 }
 
-func NewSubPub(uuidGenerator domain.UUIDGenerator, logger logger.Logger) domain.SubPub {
+func NewSubPub(uuidGenerator uuid.UUIDGenerator, logger logger.Logger) domain.SubPub {
 	logger.Info("Инициализация нового SubPub")
 
 	subPub := &SubPub{

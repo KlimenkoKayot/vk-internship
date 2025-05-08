@@ -3,11 +3,14 @@ package uuid
 import (
 	"fmt"
 
-	"github.com/klimenkokayot/vk-internship/subpub/domain"
 	"github.com/klimenkokayot/vk-internship/subpub/internal/infrastructure/uuid/adapter"
+	"github.com/klimenkokayot/vk-internship/subpub/internal/infrastructure/uuid/domain"
 )
 
-type GeneratorType int
+type (
+	UUIDGenerator = domain.UUIDGenerator
+	GeneratorType int
+)
 
 const (
 	GoogleUUID GeneratorType = iota

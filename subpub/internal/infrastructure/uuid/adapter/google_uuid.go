@@ -2,7 +2,7 @@ package adapter
 
 import (
 	"github.com/google/uuid"
-	"github.com/klimenkokayot/vk-internship/subpub/domain"
+	"github.com/klimenkokayot/vk-internship/subpub/internal/infrastructure/uuid/domain"
 )
 
 type GoogleUUIDGenerator struct{}
