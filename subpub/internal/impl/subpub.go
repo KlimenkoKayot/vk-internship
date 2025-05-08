@@ -45,8 +45,8 @@ func (e *SubPub) Subscribe(subject string, callback domain.MessageHandler) (subs
 		return nil, ErrSubPubClosed
 	}
 	defer func() {
-		e.logger.Warn("Error recover in SubPub.Subscribe")
 		if err := recover(); err != nil {
+			e.logger.Warn("Error recover in SubPub.Subscribe")
 			err = ErrPanicRecover
 		}
 		e.mu.Unlock()

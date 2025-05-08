@@ -63,20 +63,24 @@ func (es *Subscription) process() {
 		// 1. Обработка
 		select {
 		case msg, ok := <-es.processing:
-			es.callback(msg)
 			if !ok {
+				es.logger.Info("Канал processing закрыт.")
 				return
 			}
+			es.logger.Info("Получена публикация")
+			es.callback(msg)
+			es.logger.OK("Получена публикация")
 			continue
 		default:
 		}
 		// 2. Пополнение processing
 		select {
 		case msg, ok := <-es.buffer:
-			es.processing <- msg
 			if !ok {
+				es.logger.Info("Канал buffer закрыт.")
 				return
 			}
+			es.processing <- msg
 			continue
 		case <-time.After(idleDelay):
 			// Защита от busy-wait
@@ -86,25 +90,30 @@ func (es *Subscription) process() {
 }
 
 func (es *Subscription) send(msg interface{}) error {
+	es.logger.Info("Новая публикация.")
 	es.mu.Lock()
 	if es.closed {
+		es.logger.Warn("Subscription closed.")
 		es.mu.Unlock()
 		return fmt.Errorf("подписка закрыта")
 	}
 	es.mu.Unlock()
 	select {
 	case es.buffer <- msg:
-		return nil
 	default:
 		// переполнение буффера
 		es.expandBuffer(msg)
-		return nil
 	}
+	es.logger.OK("Публикация отправлена в buffer.")
+	return nil
 }
 
 func (es *Subscription) expandBuffer(msg interface{}) {
 	es.mu.Lock()
 	defer es.mu.Unlock()
+	es.logger.Info("Увеличение буффера.",
+		logger.Field{Key: "old_buffer_size", Value: len(es.buffer)},
+	)
 	newBuffer := make(chan interface{}, len(es.buffer)*2)
 	for {
 		select {
@@ -114,12 +123,16 @@ func (es *Subscription) expandBuffer(msg interface{}) {
 			close(es.buffer)
 			newBuffer <- msg
 			es.buffer = newBuffer
+			es.logger.OK("Буффер успешно учеличен.",
+				logger.Field{Key: "new_buffer_size", Value: len(es.buffer)},
+			)
 			return
 		}
 	}
 }
 
 func newSubscription(id, topic string, callback domain.MessageHandler, bus *SubPub, logger logger.Logger) *Subscription {
+	logger.Info("Инициализация экземпляра Subscription.")
 	sub := &Subscription{
 		id:       id,
 		topic:    topic,
@@ -137,5 +150,6 @@ func newSubscription(id, topic string, callback domain.MessageHandler, bus *SubP
 	}
 	sub.wg.Add(1)
 	go sub.process()
+	logger.OK("Инициализация Subscription успешно выполнена.")
 	return sub
 }
