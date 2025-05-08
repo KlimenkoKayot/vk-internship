@@ -31,6 +31,20 @@ type Subscription struct {
 
 func (es *Subscription) Unsubscribe() {
 	es.once.Do(func() {
+		// Безопасное переключение флага
+		es.mu.Lock()
+		es.closed = true
+		es.mu.Unlock()
+
+		// Выполнение оставшихся операций
+		for msg := range es.processing {
+			es.callback(msg)
+		}
+		for msg := range es.buffer {
+			es.callback(msg)
+		}
+
+		// Удаление подписки, закрытие каналов
 		es.bus.removeSubscription(es.topic, es.id)
 		close(es.processing)
 		close(es.buffer)
@@ -42,29 +56,29 @@ func (es *Subscription) process() {
 	defer es.wg.Done()
 	// Сначала обрабатываем первостепенные задачи из processing
 	// Если их нет, то стараемся перелить задачи из buffer в processing
-	for !es.closed {
+	for {
 		// 1. Обработка
 		select {
 		case msg, ok := <-es.processing:
+			es.callback(msg)
 			if !ok {
 				return
 			}
-			es.callback(msg)
 			continue
 		default:
 		}
 		// 2. Пополнение processing
 		select {
 		case msg, ok := <-es.buffer:
+			es.processing <- msg
 			if !ok {
 				return
 			}
-			es.processing <- msg
 			continue
-		default:
+		case <-time.After(idleDelay):
+			// Защита от busy-wait
+			continue
 		}
-		// Защита от busy-wait
-		time.Sleep(idleDelay)
 	}
 }
 
