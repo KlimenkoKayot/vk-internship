@@ -16,7 +16,7 @@ type (
 func NewSubPub() SubPub {
 	log, _ := logger.NewAdapter(&logger.Config{
 		Adapter: logger.AdapterZap,
-		Level:   logger.LevelInfo,
+		Level:   logger.LevelDebug,
 	})
 	gen, _ := uuid.NewUUIDGenerator(uuid.GoogleUUID)
 	return impl.NewSubPub(gen, log)

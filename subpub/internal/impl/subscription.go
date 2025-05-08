@@ -34,10 +34,7 @@ type Subscription struct {
 
 func (es *Subscription) Unsubscribe() {
 	es.once.Do(func() {
-		es.logger.Info("Начало процедуры отписки",
-			logger.Field{Key: "subscription_id", Value: es.id[:8]},
-			logger.Field{Key: "topic", Value: es.topic},
-		)
+		es.logger.Info("Начало процедуры отписки")
 
 		// Безопасное переключение флага
 		es.mu.Lock()
@@ -111,7 +108,7 @@ func (es *Subscription) process() {
 		select {
 		case msg, ok := <-es.buffer:
 			if !ok {
-				es.logger.Debug("Канал buffer закрыт, завершение работы")
+				es.logger.Info("Канал buffer закрыт, завершение работы")
 				return
 			}
 			es.logger.Info("Перемещение сообщения из buffer в processing")
@@ -204,7 +201,7 @@ func (es *Subscription) expandBuffer(msg interface{}) {
 
 func newSubscription(id, topic string, callback domain.MessageHandler, bus *SubPub, log logger.Logger) *Subscription {
 	log = log.WithFields(
-		logger.Field{Key: "subscription_id", Value: id[:8]},
+		logger.Field{Key: "subscription_id", Value: id},
 		logger.Field{Key: "topic", Value: topic},
 	)
 
