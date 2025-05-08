@@ -34,122 +34,205 @@ type Subscription struct {
 
 func (es *Subscription) Unsubscribe() {
 	es.once.Do(func() {
+		es.logger.Info("Начало процедуры отписки",
+			logger.Field{Key: "subscription_id", Value: es.id[:8]},
+			logger.Field{Key: "topic", Value: es.topic},
+		)
+
 		// Безопасное переключение флага
 		es.mu.Lock()
 		es.closed = true
 		es.mu.Unlock()
+		es.logger.Debug("Флаг closed установлен")
 
-		// Выполнение оставшихся операций
+		// Обработка оставшихся сообщений
+		es.logger.Debug("Обработка оставшихся сообщений")
+		processedCount := 0
 		for msg := range es.processing {
 			es.callback(msg)
+			processedCount++
 		}
 		for msg := range es.buffer {
 			es.callback(msg)
+			processedCount++
 		}
+		es.logger.Info("Обработаны оставшиеся сообщения",
+			logger.Field{Key: "processed_messages", Value: processedCount},
+		)
 
-		// Удаление подписки, закрытие каналов
+		// Удаление подписки
 		es.bus.removeSubscription(es.topic, es.id)
+		es.logger.Debug("Подписка удалена из bus")
+
+		// Закрытие каналов
 		close(es.processing)
 		close(es.buffer)
+		es.logger.Debug("Каналы processing и buffer закрыты")
+
+		// Ожидание завершения обработки
 		es.wg.Wait()
+		es.logger.OK("Отписка завершена успешно")
 	})
 }
 
 func (es *Subscription) process() {
-	defer es.wg.Done()
-	// Сначала обрабатываем первостепенные задачи из processing
-	// Если их нет, то стараемся перелить задачи из buffer в processing
+	defer func() {
+		if r := recover(); r != nil {
+			es.logger.Error("Паника в обработчике сообщений",
+				logger.Field{Key: "error", Value: r},
+			)
+		}
+		es.wg.Done()
+		es.logger.Debug("Горутина обработчика завершена")
+	}()
+
+	es.logger.Debug("Запуск обработчика сообщений")
 	for {
-		// 1. Обработка
+		// 1. Обработка сообщений из processing
 		select {
 		case msg, ok := <-es.processing:
 			if !ok {
-				es.logger.Info("Канал processing закрыт.")
+				es.logger.Debug("Канал processing закрыт, завершение работы")
 				return
 			}
-			es.logger.Info("Получена публикация")
+			es.logger.Info("Начало обработки сообщения из processing")
+			startTime := time.Now()
+
 			es.callback(msg)
-			es.logger.OK("Получена публикация")
+
+			es.logger.Info("Сообщение обработано",
+				logger.Field{Key: "processing_time", Value: time.Since(startTime)},
+			)
 			continue
 		default:
 		}
-		// 2. Пополнение processing
+
+		// 2. Пополнение processing из buffer
 		select {
 		case msg, ok := <-es.buffer:
 			if !ok {
-				es.logger.Info("Канал buffer закрыт.")
+				es.logger.Debug("Канал buffer закрыт, завершение работы")
 				return
 			}
-			es.processing <- msg
+			es.logger.Info("Перемещение сообщения из buffer в processing")
+			select {
+			case es.processing <- msg:
+				es.logger.Info("Сообщение успешно перемещено в processing")
+			default:
+				es.logger.Warn("Не удалось переместить сообщение в processing (канал полон)")
+			}
 			continue
 		case <-time.After(idleDelay):
-			// Защита от busy-wait
+			es.logger.Info("Ожидание новых сообщений")
 			continue
 		}
 	}
 }
 
 func (es *Subscription) send(msg interface{}) error {
-	es.logger.Info("Новая публикация.")
+	es.logger.Debug("Попытка отправки сообщения")
+	startTime := time.Now()
+
 	es.mu.Lock()
 	if es.closed {
-		es.logger.Warn("Subscription closed.")
 		es.mu.Unlock()
+		es.logger.Warn("Отказ в отправке: подписка закрыта")
 		return fmt.Errorf("подписка закрыта")
 	}
 	es.mu.Unlock()
+
 	select {
 	case es.buffer <- msg:
+		es.logger.Debug("Сообщение успешно помещено в buffer",
+			logger.Field{Key: "buffer_size", Value: len(es.buffer)},
+			logger.Field{Key: "processing_time", Value: time.Since(startTime)},
+		)
+		return nil
 	default:
-		// переполнение буффера
+		es.logger.Warn("Буфер переполнен, попытка расширения",
+			logger.Field{Key: "current_buffer_size", Value: cap(es.buffer)},
+		)
 		es.expandBuffer(msg)
+		es.logger.Debug("Сообщение обработано после расширения буфера",
+			logger.Field{Key: "new_buffer_size", Value: cap(es.buffer)},
+			logger.Field{Key: "total_processing_time", Value: time.Since(startTime)},
+		)
+		return nil
 	}
-	es.logger.OK("Публикация отправлена в buffer.")
-	return nil
 }
 
 func (es *Subscription) expandBuffer(msg interface{}) {
 	es.mu.Lock()
 	defer es.mu.Unlock()
-	es.logger.Info("Увеличение буффера.",
-		logger.Field{Key: "old_buffer_size", Value: len(es.buffer)},
+
+	oldSize := cap(es.buffer)
+	newSize := oldSize * 2
+	if newSize == 0 {
+		newSize = int(bufferSize)
+	}
+
+	es.logger.Info("Расширение буфера",
+		logger.Field{Key: "old_capacity", Value: oldSize},
+		logger.Field{Key: "new_capacity", Value: newSize},
 	)
-	newBuffer := make(chan interface{}, len(es.buffer)*2)
+
+	newBuffer := make(chan interface{}, newSize)
+	messageCount := 0
+
+	// Перенос существующих сообщений
 	for {
 		select {
-		case msg := <-es.buffer:
-			newBuffer <- msg
+		case m := <-es.buffer:
+			newBuffer <- m
+			messageCount++
 		default:
-			close(es.buffer)
+			// Добавление нового сообщения
 			newBuffer <- msg
+			messageCount++
+
+			// Замена буфера
+			close(es.buffer)
 			es.buffer = newBuffer
-			es.logger.OK("Буффер успешно учеличен.",
-				logger.Field{Key: "new_buffer_size", Value: len(es.buffer)},
+
+			es.logger.Info("Буфер успешно расширен",
+				logger.Field{Key: "messages_transferred", Value: messageCount},
+				logger.Field{Key: "new_capacity", Value: cap(es.buffer)},
 			)
 			return
 		}
 	}
 }
 
-func newSubscription(id, topic string, callback domain.MessageHandler, bus *SubPub, logger logger.Logger) *Subscription {
-	logger.Info("Инициализация экземпляра Subscription.")
-	sub := &Subscription{
-		id:       id,
-		topic:    topic,
-		callback: callback,
+func newSubscription(id, topic string, callback domain.MessageHandler, bus *SubPub, log logger.Logger) *Subscription {
+	log = log.WithFields(
+		logger.Field{Key: "subscription_id", Value: id[:8]},
+		logger.Field{Key: "topic", Value: topic},
+	)
 
+	log.Info("Создание новой подписки",
+		logger.Field{Key: "processing_size", Value: processingSize},
+		logger.Field{Key: "initial_buffer_size", Value: bufferSize},
+	)
+
+	sub := &Subscription{
+		id:         id,
+		topic:      topic,
+		callback:   callback,
 		processing: make(chan interface{}, processingSize),
 		buffer:     make(chan interface{}, bufferSize),
-
-		logger: logger,
-
-		closed: false,
-		mu:     sync.Mutex{},
-		once:   sync.Once{},
-		bus:    bus,
+		logger:     log,
+		closed:     false,
+		mu:         sync.Mutex{},
+		once:       sync.Once{},
+		bus:        bus,
 	}
+
 	sub.wg.Add(1)
 	go sub.process()
-	logger.OK("Инициализация Subscription успешно выполнена.")
+
+	log.OK("Подписка успешно создана",
+		logger.Field{Key: "processing_capacity", Value: cap(sub.processing)},
+		logger.Field{Key: "buffer_capacity", Value: cap(sub.buffer)},
+	)
 	return sub
 }
