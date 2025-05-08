@@ -95,9 +95,13 @@ func (e *SubPub) Close(ctx context.Context) error {
 func NewSubPub(uuidGenerator domain.UUIDGenerator, logger logger.Logger) domain.SubPub {
 	subPub := &SubPub{
 		topicSubscribes: make(map[string]map[string]*Subscription, 1024),
-		uuidGenerator:   uuidGenerator,
-		logger:          logger,
-		mu:              sync.RWMutex{},
+
+		uuidGenerator: uuidGenerator,
+		logger:        logger,
+
+		closed: false,
+		once:   sync.Once{},
+		mu:     sync.RWMutex{},
 	}
 	return subPub
 }
