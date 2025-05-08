@@ -135,7 +135,7 @@ func (es *Subscription) send(msg interface{}) error {
 		es.logger.Warn("Отказ в отправке: подписка закрыта")
 		return fmt.Errorf("подписка закрыта")
 	}
-	es.mu.Unlock()
+	defer es.mu.Unlock()
 
 	select {
 	case es.buffer <- msg:
