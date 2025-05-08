@@ -123,7 +123,6 @@ func (es *Subscription) process() {
 			}
 			continue
 		case <-time.After(idleDelay):
-			es.logger.Info("Ожидание новых сообщений")
 			continue
 		}
 	}
