@@ -1,8 +1,11 @@
 package subpub
 
 import (
+	"log"
+
 	"github.com/klimenkokayot/vk-internship/subpub/domain"
 	"github.com/klimenkokayot/vk-internship/subpub/internal/impl"
+	"github.com/klimenkokayot/vk-internship/subpub/internal/infrastructure/uuid"
 )
 
 type (
@@ -12,5 +15,9 @@ type (
 )
 
 func NewSubPub() SubPub {
-	return impl.NewSubPub()
+	gen, err := uuid.NewUUIDGenerator(uuid.GoogleUUID)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return impl.NewSubPub(gen)
 }
