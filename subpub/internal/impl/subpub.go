@@ -2,6 +2,7 @@ package impl
 
 import (
 	"context"
+	"log"
 	"sync"
 
 	"github.com/klimenkokayot/vk-internship/subpub/domain"
@@ -9,14 +10,20 @@ import (
 
 type SubPub struct {
 	topicSubscribes map[string]map[string]*Subscription
-	uuidGenerator   domain.UUIDGenerator
-	mu              sync.RWMutex
+
+	uuidGenerator domain.UUIDGenerator
+
+	once sync.Once
+	mu   sync.RWMutex
 }
 
+// OK
 func (e *SubPub) removeSubscription(topic, id string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	delete(e.topicSubscribes[topic], id)
+	if subs, ok := e.topicSubscribes[topic]; ok {
+		delete(subs, id)
+	}
 }
 
 func (e *SubPub) Subscribe(subject string, callback domain.MessageHandler) (domain.Subscription, error) {
@@ -35,30 +42,29 @@ func (e *SubPub) Publish(subject string, msg interface{}) error {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	for _, subscriber := range e.topicSubscribes[subject] {
-		select {
-		case subscriber.ch <- msg:
-		default:
-			// скип
-		}
+		subscriber.send(msg) // резона ошибку фиксить нет, все равно скоро удалится из map в removeSubscriber()
 	}
 	return nil
 }
 
 func (e *SubPub) Close(ctx context.Context) error {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	for _, topic := range e.topicSubscribes {
-		for _, subscriber := range topic {
-			subscriber.Unsubscribe()
+	e.once.Do(func() {
+		e.mu.RLock()
+		defer e.mu.RUnlock()
+		for _, topic := range e.topicSubscribes {
+			for _, subscriber := range topic {
+				subscriber.Unsubscribe()
+			}
 		}
-	}
+	})
 	return nil
 }
 
 func NewSubPub(uuidGenerator domain.UUIDGenerator) domain.SubPub {
-	return &SubPub{
+	subPub := &SubPub{
 		topicSubscribes: make(map[string]map[string]*Subscription, 1024),
 		uuidGenerator:   uuidGenerator,
 		mu:              sync.RWMutex{},
 	}
+	return subPub
 }
