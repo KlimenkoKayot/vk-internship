@@ -84,7 +84,7 @@ func (es *Subscription) process() {
 	}()
 
 	es.logger.Debug("Запуск обработчика сообщений")
-	for {
+	for !es.closed {
 		// 1. Обработка сообщений из processing
 		select {
 		case msg, ok := <-es.processing:
