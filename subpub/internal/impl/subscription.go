@@ -114,32 +114,30 @@ func (es *Subscription) process() {
 		}
 
 		// 2. Пополнение processing из buffer
+		es.mu.Lock()
+		if es.closed {
+			es.mu.Unlock()
+			es.logger.Debug("Подписка закрыта, завершение работы")
+			return
+		}
 		select {
 		case msg, ok := <-es.buffer:
 			if !ok {
 				es.logger.Info("Канал buffer закрыт, завершение работы")
+				es.mu.Unlock()
 				return
 			}
 
 			es.logger.Info("Перемещение сообщения из buffer в processing")
-			es.mu.Lock()
-			if es.closed {
-				es.mu.Unlock()
-				es.logger.Debug("Подписка закрыта, завершение работы")
-				return
-			}
 			select {
 			case es.processing <- msg:
 				es.logger.Info("Сообщение успешно перемещено в processing")
 			default:
 				es.logger.Warn("Не удалось переместить сообщение в processing (канал полон)")
 			}
-			es.mu.Unlock()
-
-			continue
 		case <-time.After(idleDelay):
-			continue
 		}
+		es.mu.Unlock()
 	}
 }
 
