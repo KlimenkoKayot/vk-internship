@@ -28,7 +28,12 @@ func (e *SubPub) removeSubscription(topic, id string) {
 
 func (e *SubPub) Subscribe(subject string, callback domain.MessageHandler) (domain.Subscription, error) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
+	defer func() {
+		if err := recover(); err != nil {
+			log.Fatal("panic recover is SubPub.Subscribe")
+		}
+		e.mu.Unlock()
+	}()
 	uid := e.uuidGenerator.NewString()
 	subscription := newSubscription(uid, subject, callback, e)
 	if e.topicSubscribes[subject] == nil {
