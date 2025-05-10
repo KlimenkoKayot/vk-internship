@@ -106,32 +106,69 @@ func (e *SubPub) Publish(subject string, msg interface{}) error {
 }
 
 func (e *SubPub) Close(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		e.logger.Warn("Попытка закрытия SubPub с отменённым контекстом")
+		return ctx.Err()
+	default:
+		// Контекст живой, начинаем закрытие
+	}
+
 	e.logger.Info("Запуск процедуры закрытия SubPub")
 
+	var closeErr error
 	e.once.Do(func() {
+		select {
+		case <-ctx.Done():
+			closeErr = ctx.Err()
+			e.logger.Warn("Отмена закрытия SubPub: контекст отменён")
+			return
+		default:
+		}
+
 		e.mu.Lock()
 		e.closed = true
-
 		subscribers := make([]*Subscription, 0)
 		for topic, subs := range e.topicSubscribes {
-			e.logger.Debug(fmt.Sprintf("Обработка темы %s (%d подписчиков)", topic, len(subs)))
-			for id, sub := range subs {
-				subscribers = append(subscribers, sub)
-				e.logger.Debug(fmt.Sprintf("Добавлена подписка %s для отписки", id))
+			select {
+			case <-ctx.Done():
+				e.closed = false
+				closeErr = ctx.Err()
+				e.logger.Warn("Прерывание закрытия SubPub: контекст отменён")
+				e.mu.Unlock()
+				return
+			default:
+				e.logger.Debug(fmt.Sprintf("Обработка темы %s (%d подписчиков)", topic, len(subs)))
+				for id, sub := range subs {
+					subscribers = append(subscribers, sub)
+					e.logger.Debug(fmt.Sprintf("Добавлена подписка %s для отписки", id))
+				}
 			}
 		}
 		e.mu.Unlock()
 
 		e.logger.Info(fmt.Sprintf("Начата отписка %d подписчиков", len(subscribers)))
 		for _, sub := range subscribers {
-			sub.Unsubscribe()
-			e.logger.Debug(fmt.Sprintf("Подписчик %s отписан", sub.id))
+			select {
+			case <-ctx.Done():
+				e.mu.Lock()
+				e.closed = false
+				e.mu.Unlock()
+				closeErr = ctx.Err()
+				e.logger.Warn("Прерывание отписки: контекст отменён")
+				return
+			default:
+				sub.Unsubscribe()
+				e.logger.Debug(fmt.Sprintf("Подписчик %s отписан", sub.id))
+			}
 		}
 		e.logger.OK("SubPub успешно закрыт")
-		return
 	})
 
-	e.logger.Warn("Попытка повторного закрытия.")
+	if closeErr != nil {
+		return closeErr
+	}
+
 	return nil
 }
 
