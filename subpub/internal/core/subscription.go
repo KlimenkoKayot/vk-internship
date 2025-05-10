@@ -219,12 +219,12 @@ func (es *Subscription) expandBuffer(msg interface{}) {
 }
 
 func newSubscription(id, topic string, callback domain.MessageHandler, bus *SubPub, log logger.Logger) *Subscription {
-	log = log.WithFields(
+	logSubscription := log.WithFields(
 		logger.Field{Key: "subscription_id", Value: id},
 		logger.Field{Key: "topic", Value: topic},
 	)
 
-	log.Info("Создание новой подписки",
+	logSubscription.Info("Создание новой подписки",
 		logger.Field{Key: "processing_size", Value: processingSize},
 		logger.Field{Key: "initial_buffer_size", Value: bufferSize},
 	)
@@ -235,7 +235,7 @@ func newSubscription(id, topic string, callback domain.MessageHandler, bus *SubP
 		callback:   callback,
 		processing: make(chan interface{}, processingSize),
 		buffer:     make(chan interface{}, bufferSize),
-		logger:     log,
+		logger:     logSubscription,
 		closed:     false,
 		mu:         sync.Mutex{},
 		once:       sync.Once{},
@@ -245,7 +245,7 @@ func newSubscription(id, topic string, callback domain.MessageHandler, bus *SubP
 	sub.wg.Add(1)
 	go sub.process()
 
-	log.OK("Подписка успешно создана",
+	logSubscription.OK("Подписка успешно создана",
 		logger.Field{Key: "processing_capacity", Value: cap(sub.processing)},
 		logger.Field{Key: "buffer_capacity", Value: cap(sub.buffer)},
 	)

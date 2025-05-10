@@ -49,9 +49,9 @@ func (e *SubPub) Subscribe(subject string, callback domain.MessageHandler) (subs
 	defer func() {
 		if r := recover(); r != nil {
 			e.logger.Error(fmt.Sprintf("PANIC в Subscribe: %v", r))
-			err = ErrPanicRecover
+			err = fmt.Errorf("%w: %w", ErrPanicRecover, r.(error))
 		}
-		e.mu.Unlock()
+		defer e.mu.Unlock()
 	}()
 
 	e.logger.Info(fmt.Sprintf("Попытка подписки на тему %s", subject))
@@ -66,7 +66,7 @@ func (e *SubPub) Subscribe(subject string, callback domain.MessageHandler) (subs
 
 	sub := newSubscription(uid, subject, callback, e, loggerSub)
 
-	if e.topicSubscribes[subject] == nil {
+	if _, ok := e.topicSubscribes[subject]; !ok {
 		e.topicSubscribes[subject] = make(map[string]*Subscription, 1024)
 		e.logger.Debug(fmt.Sprintf("Создана новая тема %s", subject))
 	}
@@ -92,10 +92,6 @@ func (e *SubPub) Publish(subject string, msg interface{}) error {
 	if !ok {
 		e.logger.Warn(fmt.Sprintf("Попытка публикации в несуществующую тему %s", subject))
 		return ErrTopicNotExist
-	}
-
-	if len(subs) == 0 {
-		e.logger.Debug(fmt.Sprintf("Тема %s существует, но не имеет подписчиков", subject))
 	}
 
 	for id, subscriber := range subs {
@@ -141,9 +137,9 @@ func (e *SubPub) Close(ctx context.Context) error {
 
 func NewSubPub(uuidGenerator uuid.UUIDGenerator, logger logger.Logger) domain.SubPub {
 	logger.Info("Инициализация нового SubPub")
-
+	topicSubscribes := make(map[string]map[string]*Subscription, 0)
 	subPub := &SubPub{
-		topicSubscribes: make(map[string]map[string]*Subscription, 1024),
+		topicSubscribes: topicSubscribes,
 		uuidGenerator:   uuidGenerator,
 		logger:          logger,
 		closed:          false,
