@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package subpub;
+
+option go_package = "github.com/klimenkokayot/vk-internship/service/pkg/grpc/pb";
+
+service PubSub {
+    rpc Subscribe(SubscribeRequest) returns (stream Event);
+    rpc Publish(PublishRequest) returns (Empty);
+}
+
+message Empty {}
+
+message SubscribeRequest {
+    string key = 1;
+}
+
+message PublishRequest {
+    string key = 1;
+    string data = 2;
+}
+
+message Event {
+    string data = 1;
+}
