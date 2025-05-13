@@ -63,12 +63,12 @@ cd ../subpub && go mod download
 
 2. Сгенерируйте gRPC код (из директории service):
 ```bash
-protoc --go_out=. --go-grpc_out=. pkg/grpc/pb/pubsub.proto
+cd ../service && protoc --go_out=. --go-grpc_out=. ./pkg/grpc/pb/pubsub.proto
 ```
 
 3. Запустите сервис:
 ```bash
-cd service/cmd && go run .
+go run ./cmd/.
 ```
 
 ## Конфигурация
